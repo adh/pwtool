@@ -39,6 +39,7 @@
 #include <errno.h>
 #include <tcutil.h>
 #include <tchdb.h>
+#include <getopt.h>
 
 #include "sha256.h"
 
@@ -114,7 +115,7 @@ char* get_default_database_file(){
   char* home = getenv("HOME");
 
   if (!name){
-    name = malloc(strlen(home) + strlen("/.pwtool.db") + 1);
+    name = GC_MALLOC_ATOMIC(strlen(home) + strlen("/.pwtool.db") + 1);
     strcpy(name, home);
     strcat(name, "/.pwtool.db");
   }
@@ -563,27 +564,78 @@ char* read_block(){
   return strlist_value_nl(sl);
 }
 
+static void usage(){
+  fprintf(stderr, "usage: pwtool [-d <database-file>] init\n");
+  fprintf(stderr, "                                   list\n");
+  fprintf(stderr, "                                   get <name>\n");
+  fprintf(stderr, "                                   delete <name>\n");
+  fprintf(stderr, "                                   put <name>\n");
+  exit(1);
+}
+
 int main(int argc, char**argv){
+  int opt;
   prng_init();
   database_filename = get_default_database_file();
 
+  while ((opt = getopt(argc, argv, "hd:")) != -1){
+    switch (opt){
+    case 'd':
+      database_filename = stracpy(optarg);
+      break;
+    case 'h':
+    case '?':
+      usage();
+    }
+  }
+
+
   rl_add_defun("insert-password", insert_password, '\t');
   
-  if (strcmp(argv[1], "list") == 0){
+  argv += optind;
+  argc -= optind;
+
+  if (argc < 1){
+    fprintf(stderr, "Command expected\n");
+    usage();
+  }
+
+  if (strcmp(argv[0], "list") == 0){
+    if (argc > 1){
+      fprintf(stderr, "Too many arguments\n");
+      usage();
+    }
     open_database();
     print_index(read_index());
-  } else if (strcmp(argv[1], "init") == 0){
+  } else if (strcmp(argv[0], "init") == 0){
+    if (argc > 1){
+      fprintf(stderr, "Too many arguments\n");
+      usage();
+    }
     init_database();
-  } else if (strcmp(argv[1], "put") == 0){
+  } else if (strcmp(argv[0], "put") == 0){
+    if (argc != 2){
+      fprintf(stderr, "Item name expected\n");
+      usage();
+    }
     open_database();
-    write_entry(argv[2], read_block());
-  } else if (strcmp(argv[1], "del") == 0){
+    write_entry(argv[1], read_block());
+  } else if (strcmp(argv[0], "delete") == 0){
+    if (argc != 2){
+      fprintf(stderr, "Item name expected\n");
+      usage();
+    }
     open_database();
-    remove_from_index(argv[2]);
-  } else if (strcmp(argv[1], "get") == 0){
+    remove_from_index(argv[1]);
+  } else if (strcmp(argv[0], "get") == 0){
+    if (argc != 2){
+      fprintf(stderr, "Item name expected\n");
+      usage();
+    }
     open_database();
     printf("%s\n", read_entry(argv[2]));
   } else {
     fprintf(stderr, "Unknown command\n");
+    usage();
   }
 }
