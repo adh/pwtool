@@ -170,11 +170,13 @@ void open_database(){
   uint8_t *salt;
   int creating;
   uint8_t vrfy_key[32];
+  int vrfy_len;
+  char* vrfy_read;
+  char* tmp;
+  int len;
 
   database = tchdbnew();
 
-  char* tmp;
-  int len;
   if (!tchdbopen(database, database_filename, 
                  HDBOWRITER | HDBOTSYNC)){
     fprintf(stderr, "Cannot open %s\n", database_filename);
@@ -201,11 +203,8 @@ void open_database(){
   set_keys(master_key);
   hash_record_id("crypto", "key-verify", vrfy_key);
 
-  int vrfy_len;
-  char* vrfy_read = tchdbget(database, "key-verify", 10, &vrfy_len);
+  vrfy_read = tchdbget(database, "key-verify", 10, &vrfy_len);
   if (vrfy_len != 8 || memcmp(vrfy_read, vrfy_key, 8) != 0){
-    hexdump(vrfy_key, 8);
-    hexdump(vrfy_read, 8);
     fprintf(stderr, "Invalid passphrase\n");
     exit(1);
   }
@@ -233,6 +232,16 @@ char* stracpy(char* ptr){
   memcpy(res, ptr, len + 1);
   return res;
 }
+
+char* stracat(char* a, char* b){
+  size_t a_len = strlen(a);
+  size_t b_len = strlen(b);
+  char* res = GC_MALLOC_ATOMIC(a_len + b_len + 1);
+  memcpy(res, a, a_len);
+  memcpy(res + a_len, b, b_len + 1);
+  return res;
+}
+
 
 typedef struct strlist_t strlist_t;
 typedef struct strlist_entry_t strlist_entry_t;
@@ -570,6 +579,7 @@ static void usage(){
   fprintf(stderr, "                                   get <name>\n");
   fprintf(stderr, "                                   delete <name>\n");
   fprintf(stderr, "                                   put <name>\n");
+  fprintf(stderr, "                                   append <name>\n");
   exit(1);
 }
 
@@ -619,7 +629,18 @@ int main(int argc, char**argv){
       usage();
     }
     open_database();
-    write_entry(argv[1], read_block());
+    write_entry(argv[1], read_block(NULL));
+  } else if (strcmp(argv[0], "append") == 0){
+    char* old;
+    if (argc != 2){
+      fprintf(stderr, "Item name expected\n");
+      usage();
+    }
+    open_database();
+
+    old = read_entry(argv[1]);
+    printf("%s", old);
+    write_entry(argv[1], stracat(old, read_block(old)));
   } else if (strcmp(argv[0], "delete") == 0){
     if (argc != 2){
       fprintf(stderr, "Item name expected\n");
@@ -633,7 +654,7 @@ int main(int argc, char**argv){
       usage();
     }
     open_database();
-    printf("%s\n", read_entry(argv[2]));
+    printf("%s", read_entry(argv[1]));
   } else {
     fprintf(stderr, "Unknown command\n");
     usage();
