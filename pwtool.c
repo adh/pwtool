@@ -497,7 +497,6 @@ char* read_entry(char* name){
   size_t tmp;
   char* ret;
 
-  add_to_index(name);
   hash_record_id("entry", name, entry_key);
 
   raw_buf = tchdbget(database, entry_key, 32, &raw_len);
