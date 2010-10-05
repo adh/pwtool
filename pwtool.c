@@ -472,9 +472,10 @@ void remove_from_index(char* elm){
       idx_entry_t* j = idx;
 
       while (i){
-        if (strcmp(i->name, elm)){
+        if (strcmp(i->name, elm) == 0){
           j->next = i->next;
         }
+        j = i;
         i = i->next;
       }
     }
@@ -533,9 +534,14 @@ void write_entry(char* name, char* contents){
 }
 
 void delete_entry(char* name){
+  uint8_t entry_key[32];
+  hash_record_id("entry", name, entry_key);
   tchdbtranbegin(database);
   remove_from_index(name);
-
+  if (!tchdbout(database, entry_key, 32)){
+    fprintf(stderr, "Error writing to database");
+    exit(1);
+  }
   tchdbtrancommit(database);  
 }
 
@@ -736,7 +742,7 @@ int main(int argc, char**argv){
       usage();
     }
     open_database();
-    remove_from_index(argv[1]);
+    delete_entry(argv[1]);
   } else if (strcmp(argv[0], "get") == 0){
     if (argc != 2){
       fprintf(stderr, "Item name expected\n");
