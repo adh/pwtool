@@ -512,11 +512,10 @@ char* read_entry(char* name){
   return ret;
 }
 
-void write_entry(char* name, char* contents){
+void write_entry_low(char* name, char* contents){
   uint8_t entry_key[32];
   char* raw_buf;
   size_t raw_len;
-  tchdbtranbegin(database);
   add_to_index(name);
   hash_record_id("entry", name, entry_key);
   encrypt_record(contents, strlen(contents), &raw_buf, &raw_len);
@@ -524,6 +523,12 @@ void write_entry(char* name, char* contents){
     fprintf(stderr, "Error writing to database");
     exit(1);
   }
+}
+
+
+void write_entry(char* name, char* contents){
+  tchdbtranbegin(database);
+  write_entry_low(name, contents);
   tchdbtrancommit(database);
 }
 
@@ -570,6 +575,91 @@ char* read_block(){
   }
 
   return strlist_value_nl(sl);
+}
+
+void export_index(idx_entry_t* idx){
+  while (idx){
+    printf("%s\n", idx->name);
+    printf("%s.\n", read_entry(idx->name));    
+    idx = idx->next;
+  }
+}
+
+static char* read_line(FILE* stream){
+  char* ret;
+  char* tmp;
+  size_t allocd;
+  size_t offset;
+  size_t i;
+
+  ret = GC_MALLOC(512);
+  allocd = 512;
+  offset = 0;
+
+
+  while (1){
+    if(!fgets(ret + offset, allocd - offset, stream)){      
+      if (feof(stream)){ /* because of EOF */
+        return "";
+      } else { /* because of some other failure */
+        return NULL;
+      }
+    }
+
+    offset += strlen(ret + offset);
+    
+    if (offset == 0){  /* nothing */
+        return ret;
+    }
+    
+    if (ret[offset-1] == '\n') {   /* full line */
+      i = offset;
+
+      while (i > 0 && (ret[i] == '\r' || ret[i] == '\n')){ 
+        /* skip redundant CRs and LFs at end of line */
+        i--;
+      }
+
+      if (ret[i] == '\\'){ /* backlash continuation */
+        offset = i;
+      } else {
+        return ret;
+      }
+    }
+
+    allocd += 512;
+    tmp = GC_REALLOC(ret, allocd);
+    ret = tmp;
+  }
+}
+
+char* read_exported_contents(){
+  strlist_t* sl = strlist_create();
+  char* ret;
+
+  while (ret = read_line(stdin)){
+    if (*ret == '\0' || strcmp(ret, ".\n") == 0){
+      break;
+    }
+    
+    strlist_append(sl, ret);
+  }
+
+  return strlist_value(sl);
+}
+
+void import(){
+  tchdbtranbegin(database);
+  while (!feof(stdin)){
+    char* name = read_line(stdin);
+    char* contents = read_exported_contents();
+    if (!name || *name == '\0'){
+      break;
+    }
+    name[strlen(name)-1] = '\0';
+    write_entry_low(name, contents);    
+  }
+  tchdbtrancommit(database);
 }
 
 static void usage(){
@@ -654,6 +744,20 @@ int main(int argc, char**argv){
     }
     open_database();
     printf("%s", read_entry(argv[1]));
+  } else if (strcmp(argv[0], "export") == 0){
+    if (argc > 1){
+      fprintf(stderr, "Too many arguments\n");
+      usage();      
+    }
+    open_database();
+    export_index(read_index());
+  } else if (strcmp(argv[0], "import") == 0){
+    if (argc > 1){
+      fprintf(stderr, "Too many arguments\n");
+      usage();      
+    }
+    open_database();
+    import();
   } else {
     fprintf(stderr, "Unknown command\n");
     usage();
